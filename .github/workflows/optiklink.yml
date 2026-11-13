@@ -67,13 +67,15 @@ jobs:
           # 验证配置
           if ! jq . config.json >/dev/null 2>&1; then
             echo "❌ 生成的配置无效"
-            cat config.json
+            echo "❌ 生成的 Xray 配置格式无效，请检查 Secret"
             exit 1
           fi
           
-          NODE_ADDR=$(jq -r '.outbounds[0].settings.vnext[0].address' config.json)
-          NODE_PORT=$(jq -r '.outbounds[0].settings.vnext[0].port' config.json)
-          echo "✅ 配置生成成功: ${NODE_ADDR}:${NODE_PORT}"
+          NODE_ADDR=$(jq -r '.outbounds[0].settings.vnext[0].address' config.json 2>/dev/null || echo "")
+          NODE_PORT=$(jq -r '.outbounds[0].settings.vnext[0].port' config.json 2>/dev/null || echo "")
+          [ -n "$NODE_ADDR" ] && echo "::add-mask::$NODE_ADDR"
+          [ -n "$NODE_PORT" ] && echo "::add-mask::$NODE_PORT"
+          echo "✅ 代理配置解析并校验成功"
 
           # 启动 Xray
           ./xray run -c config.json > xray.log 2>&1 &
@@ -91,7 +93,7 @@ jobs:
           
           if ! nc -z 127.0.0.1 10808 2>/dev/null; then
             echo "❌ 端口未就绪，Xray 日志："
-            tail -20 xray.log
+            echo "❌ 代理端口未就绪，请检查节点连通性"
             exit 1
           fi
 
@@ -99,7 +101,8 @@ jobs:
           echo "🔄 测试代理连接..."
           PROXY_IP=$(curl -s --max-time 10 --socks5 127.0.0.1:10808 ifconfig.me 2>/dev/null || echo "")
           if [ -n "$PROXY_IP" ]; then
-            echo "✅ 代理工作正常，出口 IP: $PROXY_IP"
+            echo "::add-mask::$PROXY_IP"
+            echo "✅ 代理工作正常，出口连接测试通过"
           else
             echo "⚠️ 代理测试失败（可能目标网站不可达，继续执行）"
           fi
